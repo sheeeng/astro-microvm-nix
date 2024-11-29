@@ -247,16 +247,17 @@ list of (submodule)</p>
 <code>[ ]</code></p>
 <p><em>Example:</em></p>
 <pre><code>[ {
-        bus = "pci";
-        path = "0000:01:00.0";
-      } {
-        bus = "pci";
-        path = "0000:01:01.0";
-      } {
-        # QEMU only
-        bus = "usb";
-        path = "vendorid=0xabcd,productid=0x0123";
-      } ]
+  bus = "pci";
+  path = "0000:01:00.0";
+} {
+  bus = "pci";
+  path = "0000:01:01.0";
+} {
+  # QEMU only
+  bus = "usb";
+  path = "vendorid=0xabcd,productid=0x0123";
+} ]
+
 </code></pre>
 <p><em>Declared by:</em></p>
 <ul>
@@ -725,12 +726,11 @@ boolean</p>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
 <h2 id="microvmvolumesdirect"><a class="header" href="#microvmvolumesdirect">microvm.volumes.*.direct</a></h2>
-<p>Whether to set O_DIRECT on the disk.
-(Currently only respected if using cloud-hypervisor)</p>
+<p>Whether to set O_DIRECT on the disk.</p>
 <p><em>Type:</em>
-null or boolean</p>
+boolean</p>
 <p><em>Default:</em>
-<code>null</code></p>
+<code>false</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -782,8 +782,7 @@ null or path</p>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
 <h2 id="microvmvolumesserial"><a class="header" href="#microvmvolumesserial">microvm.volumes.*.serial</a></h2>
-<p>User-configured serial number for the disk
-(Currently only respected if using cloud-hypervisor)</p>
+<p>User-configured serial number for the disk</p>
 <p><em>Type:</em>
 null or string</p>
 <p><em>Default:</em>
