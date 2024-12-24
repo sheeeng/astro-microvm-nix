@@ -300,6 +300,11 @@ interfaces before starting a MicroVM:</p>
 with more than one CPU core.</p>
 <p>When running MicroVMs through the <code>host</code> module, the tap network
 interfaces are created through a systemd service dependency.</p>
+<p>Extend the generated script in the guest configuration like this:</p>
+<pre><code class="language-nix">microvm.binScripts.tap-up = lib.mkAfter ''
+  ${lib.getExe' pkgs.iproute2 "ip"} link set dev 'vm-ixp-as11201p' master 'ixp-peering'
+'';
+</code></pre>
 <h2 id="type--macvtap"><a class="header" href="#type--macvtap"><code>type = "macvtap"</code></a></h2>
 <p><em>MACVTAP</em> interfaces attach to a host's physical network interface,
 joining the same Ethernet segment with a separate MAC address.</p>
@@ -327,6 +332,11 @@ specified.</p>
 permissions. See the <code>host</code> module for that. qemu will be run
 <em>without</em> <code>-sandbox on</code> in order for this contraption to work.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="shares"><a class="header" href="#shares">Shares</a></h1>
+<p>Persistent file-systems are provided by both volumes and
+shares. Volumes are block devices inside the virtual machine, yielding
+fast performance but mounted file-systems require exclusive
+access. Shares allow mounting an arbitrary directory tree from the
+host.</p>
 <p>In <code>microvm.shares</code> elements the <code>proto</code> field allows either of two
 values:</p>
 <ul>
@@ -335,12 +345,23 @@ values:</p>
 quickly share a directory tree</p>
 </li>
 <li>
-<p><code>virtiofs</code> requires a separate virtiofsd service which is only
-started as a prerequisite when you start MicroVMs through a systemd
-service that comes with the <code>microvm.nixosModules.host</code> module.</p>
+<p><code>virtiofs</code> requires a separate virtiofsd service which is started as
+a prerequisite when you start MicroVMs through a systemd service
+that comes with the <code>microvm.nixosModules.host</code> module.</p>
+<p>If you want to run from the command-line, start <code>bin/virtiofsd-run</code>
+separately.</p>
 <p>Expect <code>virtiofs</code> to yield better performance over <code>9p</code>.</p>
 </li>
 </ul>
+<pre><code class="language-nix">microvm.shares = [ {
+  proto = "virtiofs";
+  tag = "home";
+  # Source path can be absolute or relative
+  # to /var/lib/microvms/$hostName
+  source = "home";
+  mountPoint = "/home";
+} ];
+</code></pre>
 <div class="warning">
 When sharing a path that is on ZFS with virtiofs, the dataset must
 have options
@@ -521,6 +542,16 @@ booting of the VM allocates mem+balloonMem megabytes of RAM.</p>
 signed integer</p>
 <p><em>Default:</em>
 <code>0</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmbinscripts"><a class="header" href="#microvmbinscripts">microvm.binScripts</a></h2>
+<p>Script snippets that end up in the runner package’s bin/ directory</p>
+<p><em>Type:</em>
+attribute set of strings concatenated with “\n”</p>
+<p><em>Default:</em>
+<code>{ }</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -817,9 +848,7 @@ string</p>
 <h2 id="microvminterfacesmacvtaplink"><a class="header" href="#microvminterfacesmacvtaplink">microvm.interfaces.*.macvtap.link</a></h2>
 <p>Attach network interface to host interface for type = “macvlan”</p>
 <p><em>Type:</em>
-null or string</p>
-<p><em>Default:</em>
-<code>null</code></p>
+string</p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -827,9 +856,7 @@ null or string</p>
 <h2 id="microvminterfacesmacvtapmode"><a class="header" href="#microvminterfacesmacvtapmode">microvm.interfaces.*.macvtap.mode</a></h2>
 <p>The MACVLAN mode to use</p>
 <p><em>Type:</em>
-null or one of “private”, “vepa”, “bridge”, “passthru”, “source”</p>
-<p><em>Default:</em>
-<code>null</code></p>
+one of “private”, “vepa”, “bridge”, “passthru”, “source”</p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -1043,6 +1070,41 @@ signed integer</p>
 <ul>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
+<h2 id="microvmvirtiofsdextraargs"><a class="header" href="#microvmvirtiofsdextraargs">microvm.virtiofsd.extraArgs</a></h2>
+<p>Extra command-line switch to pass to virtiofsd.</p>
+<p><em>Type:</em>
+list of string</p>
+<p><em>Default:</em>
+<code>[ ]</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvirtiofsdinodefilehandles"><a class="header" href="#microvmvirtiofsdinodefilehandles">microvm.virtiofsd.inodeFileHandles</a></h2>
+<p>When to use file handles to reference inodes instead of O_PATH file descriptors
+(never, prefer, mandatory)</p>
+<p>Allows you to overwrite default behavior in case you hit “too
+many open files” on eg. ZFS.
+<a href="https://gitlab.com/virtio-fs/virtiofsd/-/issues/121">https://gitlab.com/virtio-fs/virtiofsd/-/issues/121</a></p>
+<p><em>Type:</em>
+null or one of “never”, “prefer”, “mandatory”</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvirtiofsdthreadpoolsize"><a class="header" href="#microvmvirtiofsdthreadpoolsize">microvm.virtiofsd.threadPoolSize</a></h2>
+<p>The amounts of threads virtiofsd should spawn. This option also takes the special
+string <code>\</code>nproc`` which spawns as many threads as the host has cores.</p>
+<p><em>Type:</em>
+string or (unsigned integer, meaning &gt;=0)</p>
+<p><em>Default:</em>
+<code>"`nproc`"</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
 <h2 id="microvmvolumes"><a class="header" href="#microvmvolumes">microvm.volumes</a></h2>
 <p>Disk images</p>
 <p><em>Type:</em>
@@ -1115,6 +1177,16 @@ list of string</p>
 <p>If and where to mount the volume inside the container</p>
 <p><em>Type:</em>
 null or path</p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvolumesreadonly"><a class="header" href="#microvmvolumesreadonly">microvm.volumes.*.readOnly</a></h2>
+<p>Turn off write access</p>
+<p><em>Type:</em>
+boolean</p>
+<p><em>Default:</em>
+<code>false</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -1478,28 +1550,6 @@ boolean</p>
 <ul>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
 </ul>
-<h2 id="microvmhosttapscript"><a class="header" href="#microvmhosttapscript">microvm.host.tapScript</a></h2>
-<p>Commands to run after creating a tap interface</p>
-<p>Defaults to bring the interface up.</p>
-<p>If you do not want the interface to be automatically created
-at all, just set
-<code>systemd.services."microvm-tap-interfaces@%i.service".enable = false</code></p>
-<p><em>Type:</em>
-strings concatenated with “\n”</p>
-<p><em>Default:</em></p>
-<pre><code>''
-  /nix/store/p6c92mx3kmnqcr482d16qqz67yqam72p-iproute2-6.10.0/bin/ip link set "$id" up
-''
-</code></pre>
-<p><em>Example:</em></p>
-<pre><code># Attach tap interface to bridge br0, and bring it up
-"/nix/store/p6c92mx3kmnqcr482d16qqz67yqam72p-iproute2-6.10.0/bin/ip link set \"$id\" master br0 up"
-
-</code></pre>
-<p><em>Declared by:</em></p>
-<ul>
-<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
-</ul>
 <h2 id="microvmhostusenotifysockets"><a class="header" href="#microvmhostusenotifysockets">microvm.host.useNotifySockets</a></h2>
 <p>Enable if all your MicroVMs run with a Hypervisor that sends
 readiness notification over a VSOCK.</p>
@@ -1519,41 +1569,6 @@ boolean</p>
 path</p>
 <p><em>Default:</em>
 <code>"/var/lib/microvms"</code></p>
-<p><em>Declared by:</em></p>
-<ul>
-<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
-</ul>
-<h2 id="microvmvirtiofsdextraargs"><a class="header" href="#microvmvirtiofsdextraargs">microvm.virtiofsd.extraArgs</a></h2>
-<p>Extra command-line switch to pass to virtiofsd.</p>
-<p><em>Type:</em>
-list of string</p>
-<p><em>Default:</em>
-<code>[ ]</code></p>
-<p><em>Declared by:</em></p>
-<ul>
-<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
-</ul>
-<h2 id="microvmvirtiofsdinodefilehandles"><a class="header" href="#microvmvirtiofsdinodefilehandles">microvm.virtiofsd.inodeFileHandles</a></h2>
-<p>When to use file handles to reference inodes instead of O_PATH file descriptors
-(never, prefer, mandatory)</p>
-<p>Allows you to overwrite default behavior in case you hit “too
-many open files” on eg. ZFS.
-<a href="https://gitlab.com/virtio-fs/virtiofsd/-/issues/121">https://gitlab.com/virtio-fs/virtiofsd/-/issues/121</a></p>
-<p><em>Type:</em>
-null or one of “never”, “prefer”, “mandatory”</p>
-<p><em>Default:</em>
-<code>null</code></p>
-<p><em>Declared by:</em></p>
-<ul>
-<li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
-</ul>
-<h2 id="microvmvirtiofsdthreadpoolsize"><a class="header" href="#microvmvirtiofsdthreadpoolsize">microvm.virtiofsd.threadPoolSize</a></h2>
-<p>The amounts of threads virtiofsd should spawn. This option also takes the special
-string <code>\</code>nproc`` which spawns as many threads as the host has cores.</p>
-<p><em>Type:</em>
-string or (unsigned integer, meaning &gt;=0)</p>
-<p><em>Default:</em>
-<code>"`nproc`"</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/astro/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
