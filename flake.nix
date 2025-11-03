@@ -112,7 +112,7 @@
               name = builtins.replaceStrings [ "${system}-" ] [ "" ] systemName;
               inherit (nixos.config.microvm) hypervisor;
             in
-              if nixos.pkgs.system == nixpkgs.lib.replaceString "-darwin" "-linux" system
+              if nixos.pkgs.stdenv.hostPlatform.system == nixpkgs.lib.replaceString "-darwin" "-linux" system
               then result // {
                 "${name}" = nixos.config.microvm.runner.${hypervisor};
               }

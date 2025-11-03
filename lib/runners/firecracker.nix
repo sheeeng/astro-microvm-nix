@@ -4,7 +4,8 @@
 }:
 
 let
-  inherit (pkgs) lib system;
+  inherit (pkgs) lib;
+  inherit (pkgs.stdenv.hostPlatform) system;
   inherit (microvmConfig)
     hostName user socket preStart
     vcpu mem balloon initialBalloonMem hotplugMem hotpluggedMem

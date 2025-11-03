@@ -7,7 +7,7 @@
 
 let
   inherit (pkgs) lib;
-  inherit (pkgs.stdenv) system;
+  inherit (pkgs.stdenv.hostPlatform) system;
   inherit (microvmConfig) vmHostPackages;
 
   enableLibusb = pkg: pkg.overrideAttrs (oa: {
