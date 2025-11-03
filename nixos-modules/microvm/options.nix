@@ -730,12 +730,12 @@ in
 
   config = lib.mkMerge [ {
     microvm.qemu.machine =
-      lib.mkIf (pkgs.stdenv.system == "x86_64-linux") (
+      lib.mkIf (pkgs.stdenv.hostPlatform.system == "x86_64-linux") (
         lib.mkDefault "microvm"
       );
   } {
     microvm.qemu.machine =
-      lib.mkIf (pkgs.stdenv.system == "aarch64-linux") (
+      lib.mkIf (pkgs.stdenv.hostPlatform.system == "aarch64-linux") (
         lib.mkDefault "virt"
       );
   } ];
