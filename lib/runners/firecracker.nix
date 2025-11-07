@@ -38,7 +38,7 @@ let
       path_on_host = storeDisk;
       is_root_device = false;
       is_read_only = true;
-      io_engine = "Async";
+      io_engine = microvmConfig.firecracker.driveIoEngine;
     } ] ++ map ({ image, serial, direct, readOnly, ... }:
       lib.warnIf (serial != null) ''
         Volume serial is not supported for firecracker
@@ -50,7 +50,7 @@ let
         path_on_host = image;
         is_root_device = false;
         is_read_only = readOnly;
-        io_engine = "Async";
+        io_engine = microvmConfig.firecracker.driveIoEngine;
       }) volumes;
     network-interfaces = map ({ type, id, mac, ... }:
       if type == "tap"
