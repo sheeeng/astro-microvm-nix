@@ -457,14 +457,22 @@ one of “tcp”, “udp”</p>
 <p>Enable GUI support.</p>
 <p>MicroVMs with graphics are intended for the interactive
 use-case. They cannot be started through systemd jobs.</p>
-<p>Support in Hypervisors:</p>
-<ul>
-<li><code>qemu</code> starts a Gtk window with the framebuffer of the virtio-gpu</li>
-</ul>
+<p>The display backend is chosen by <code>microvm.graphics.backend</code>.</p>
 <p><em>Type:</em>
 boolean</p>
 <p><em>Default:</em>
 <code>false</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmgraphicsbackend"><a class="header" href="#microvmgraphicsbackend">microvm.graphics.backend</a></h2>
+<p>QEMU display backend to use when <code>graphics.enable</code> is true.</p>
+<p>Defaults to <code>cocoa</code> on Darwin hosts and <code>gtk</code> otherwise.</p>
+<p><em>Type:</em>
+one of “gtk”, “cocoa”</p>
+<p><em>Default:</em>
+<code>if pkgs.stdenv.hostPlatform.isDarwin then "cocoa" else "gtk"</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -721,6 +729,20 @@ boolean</p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
+<h2 id="microvmregisterclosure"><a class="header" href="#microvmregisterclosure">microvm.registerClosure</a></h2>
+<p>Whether to enable Register system closure’s store paths in Nix db.</p>
+<p>While enabled by default, this option may be incompatible with a persistent writable store overlay.
+.</p>
+<p><em>Type:</em>
+boolean</p>
+<p><em>Default:</em>
+<code>true</code></p>
+<p><em>Example:</em>
+<code>true</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
 <h2 id="microvmrunner"><a class="header" href="#microvmrunner">microvm.runner</a></h2>
 <p>Generated Hypervisor runner for this NixOS</p>
 <p><em>Type:</em>
@@ -753,6 +775,16 @@ absolute path</p>
 one of “9p”, “virtiofs”</p>
 <p><em>Default:</em>
 <code>"9p"</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmsharesreadonly"><a class="header" href="#microvmsharesreadonly">microvm.shares.*.readOnly</a></h2>
+<p>Turn off write access</p>
+<p><em>Type:</em>
+boolean</p>
+<p><em>Default:</em>
+<code>false</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
