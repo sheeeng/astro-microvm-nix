@@ -38,7 +38,7 @@
             default = null;
             type = nullOr (lib.mkOptionType {
               name = "Toplevel NixOS config";
-              merge = loc: defs: (import "${config.nixpkgs}/nixos/lib/eval-config.nix" {
+              merge = loc: defs: (import "${toString config.nixpkgs}/nixos/lib/eval-config.nix" {
                 modules =
                   let
                     extraConfig = ({ lib, ... }: {
