@@ -81,6 +81,8 @@
               inherit system;
               overlays = [ self.overlay ];
             };
+
+            inherit (pkgs) lib;
           in {
             build-microvm = pkgs.callPackage ./pkgs/build-microvm.nix { inherit self; };
             doc = pkgs.callPackage ./pkgs/doc.nix { };
@@ -112,7 +114,7 @@
               name = builtins.replaceStrings [ "${system}-" ] [ "" ] systemName;
               inherit (nixos.config.microvm) hypervisor;
             in
-              if nixos.pkgs.stdenv.hostPlatform.system == nixpkgs.lib.replaceString "-darwin" "-linux" system
+              if nixos.pkgs.stdenv.hostPlatform.system == lib.replaceString "-darwin" "-linux" system
               then result // {
                 "${name}" = nixos.config.microvm.runner.${hypervisor};
               }
@@ -151,6 +153,8 @@
 
         nixosConfigurations =
           let
+            inherit (nixpkgs) lib;
+
             hypervisorsWith9p = [
               "qemu"
               # currently broken:
@@ -158,8 +162,8 @@
             ];
             hypervisorsWithUserNet = [ "qemu" "kvmtool" ];
             makeExample = { system, hypervisor, config ? {} }:
-              nixpkgs.lib.nixosSystem {
-                system = nixpkgs.lib.replaceString "-darwin" "-linux" system;
+              lib.nixosSystem {
+                system = lib.replaceString "-darwin" "-linux" system;
 
                 modules = [
                   self.nixosModules.microvm
@@ -214,7 +218,7 @@
                     inherit system hypervisor;
                   };
                 } //
-                nixpkgs.lib.optionalAttrs (builtins.elem hypervisor self.lib.hypervisorsWithNetwork) {
+                lib.optionalAttrs (builtins.elem hypervisor self.lib.hypervisorsWithNetwork) {
                   "${system}-${hypervisor}-example-with-tap" = makeExample {
                     inherit system hypervisor;
                     config = _: {
