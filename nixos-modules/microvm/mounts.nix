@@ -87,7 +87,7 @@ lib.mkIf config.microvm.guest.enable {
           upperdir = "${writableStoreOverlay}/store";
           workdir = "${writableStoreOverlay}/work";
         };
-        options = lib.optional isRwStoreVirtiofsShare "userxattr";
+        options = lib.mkIf isRwStoreVirtiofsShare [ "userxattr" ];
       };
     }
   ) {
