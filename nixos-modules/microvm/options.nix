@@ -688,7 +688,24 @@ in
 
     firecracker.extraConfig = mkOption {
       type = types.submodule {
-        freeformType = (pkgs.formats.json {}).type;
+        freeformType =
+          # vendored (pkgs.formats.json {}).type to avoid pkgs dependency and eval failure in search's
+          with types;
+          let
+            baseType = oneOf [
+              bool
+              int
+              float
+              str
+              path
+              (attrsOf valueType)
+              (listOf valueType)
+            ];
+            valueType = nullOr baseType // {
+              description = "JSON value";
+            };
+          in
+          valueType;
       };
       default = {};
       description = "Extra config to merge into Firecracker JSON configuration";
