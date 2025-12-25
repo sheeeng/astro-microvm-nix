@@ -11,7 +11,7 @@ let
     vcpu mem balloon initialBalloonMem hotplugMem hotpluggedMem
     interfaces volumes shares devices
     kernel initrdPath
-    storeDisk credentialFiles;
+    storeDisk credentialFiles vsock;
   inherit (microvmConfig.firecracker) cpu;
 
   kernelPath = {
@@ -61,8 +61,16 @@ let
       }
       else throw "Network interface type ${type} not implemented for Firecracker"
     ) interfaces;
-    vsock = null;
-  } // lib.optionalAttrs (cpu != null) {
+    vsock =
+      if vsock.cid != null then
+        {
+          guest_cid = vsock.cid;
+          uds_path = "notify.vsock";
+        }
+      else
+        null;
+  }
+  // lib.optionalAttrs (cpu != null) {
     cpu-config = pkgs.writeText "cpu-config.json" (builtins.toJSON cpu);
   };
   config = lib.recursiveUpdate baseConfig microvmConfig.firecracker.extraConfig;
@@ -105,6 +113,9 @@ in {
     if [ -e '${socket}' ]; then
       mv '${socket}' '${socket}.old'
     fi
+  ''
+  + lib.optionalString (vsock.cid != null) ''
+    rm -f notify.vsock notify.vsock_*
   '';
 
   canShutdown = socket != null;
