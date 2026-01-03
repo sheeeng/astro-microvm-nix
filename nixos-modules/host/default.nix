@@ -1,8 +1,8 @@
 { pkgs, config, lib, ... }:
 let
   inherit (config.microvm) stateDir;
-  microvmCommand = import ../../pkgs/microvm-command.nix {
-    inherit pkgs stateDir;
+  microvmCommand = pkgs.callPackage ../../pkgs/microvm-command.nix {
+    inherit stateDir;
   };
   user = "microvm";
   group = "kvm";
