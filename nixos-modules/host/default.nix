@@ -25,6 +25,8 @@ in
     boot.kernelModules = [
       # For `type = "tap"` interfaces
       "tap"
+      # For `tap.vhost = true` interfaces
+      "vhost_net"
     ];
 
     system.activationScripts.microvm-host = ''
