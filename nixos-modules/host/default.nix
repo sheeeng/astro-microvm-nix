@@ -22,7 +22,10 @@ in
       }
     ]) (builtins.attrNames config.microvm.vms);
 
-    boot.kernelModules = [ "tun" ];
+    boot.kernelModules = [
+      # For `type = "tap"` interfaces
+      "tap"
+    ];
 
     system.activationScripts.microvm-host = ''
       mkdir -p ${stateDir}
