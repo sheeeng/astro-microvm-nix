@@ -127,12 +127,12 @@
       );
 
       # Takes too much memory in `nix flake show`
-      # checks = forAllSystems (system: 
+      # checks = forAllSystems (system:
       #   import ./checks { inherit self nixpkgs system; };
       # );
 
       # hydraJobs are checks
-      hydraJobs = forAllSystems (system: 
+      hydraJobs = forAllSystems (system:
         builtins.mapAttrs (_: check:
           (nixpkgs.lib.recursiveUpdate check {
             meta.timeout = 12 * 60 * 60;
