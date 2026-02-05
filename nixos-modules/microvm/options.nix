@@ -649,19 +649,27 @@ in
     qemu.package = mkOption {
       description = "The QEMU package to use.";
       type = types.package;
-      default = if cfg.cpu == null && cfg.vmHostPackages.stdenv.hostPlatform.isLinux
-      then
+      default = if cfg.cpu == null && cfg.vmHostPackages.stdenv.hostPlatform.isLinux then
         # If no CPU is requested and the host is Linux, use qemu with KVM support (hardware-accelerated)
         cfg.vmHostPackages.qemu_kvm
       else
         # Different CPU architectures like darwin or Non-Linux use the generic qemu package
         cfg.vmHostPackages.qemu;
+      defaultText = lib.literalExpression ''
+        if config.microvm.cpu == null && config.microvm.vmHostPackages.stdenv.hostPlatform.isLinux then
+          # If no CPU is requested and the host is Linux, use qemu with KVM support (hardware-accelerated)
+          config.microvm.vmHostPackages.qemu_kvm
+        else
+          # Different CPU architectures like darwin or Non-Linux use the generic qemu package
+          config.microvm.vmHostPackages.qemu
+      '';
     };
 
     alioth.package = mkOption {
       description = "The alioth package to use.";
       type = types.package;
       default = cfg.vmHostPackages.alioth;
+      defaultText = lib.literalExpression "config.microvm.vmHostPackages.alioth";
     };
 
     cloud-hypervisor.platformOEMStrings = mkOption {
@@ -690,9 +698,16 @@ in
     cloud-hypervisor.package = mkOption {
       description = "The cloud-hypervisor package to use.";
       type = types.package;
-      default = if cfg.graphics.enable
-        then cfg.vmHostPackages.cloud-hypervisor-graphics
-        else cfg.vmHostPackages.cloud-hypervisor;
+      default = if cfg.graphics.enable then
+        cfg.vmHostPackages.cloud-hypervisor-graphics
+      else
+        cfg.vmHostPackages.cloud-hypervisor;
+      defaultText = lib.literalExpression ''
+        if config.microvm.graphics.enable then
+          config.microvm.vmHostPackages.cloud-hypervisor-graphics
+        else
+          config.microvm.vmHostPackages.cloud-hypervisor
+      '';
     };
 
     crosvm.extraArgs = mkOption {
@@ -711,6 +726,7 @@ in
       description = "The crosvm package to use.";
       type = types.package;
       default = cfg.vmHostPackages.crosvm;
+      defaultText = lib.literalExpression "config.microvm.vmHostPackages.crosvm";
     };
 
     firecracker.cpu = mkOption {
@@ -760,18 +776,21 @@ in
       description = "The firecracker package to use.";
       type = types.package;
       default = cfg.vmHostPackages.firecracker;
+      defaultText = lib.literalExpression "config.microvm.vmHostPackages.firecracker";
     };
 
     kvmtool.package = mkOption {
       description = "The kvmtool package to use.";
       type = types.package;
       default = cfg.vmHostPackages.kvmtool;
+      defaultText = lib.literalExpression "config.microvm.vmHostPackages.kvmtool";
     };
 
     stratovirt.package = mkOption {
       description = "The stratovirt package to use.";
       type = types.package;
       default = cfg.vmHostPackages.stratovirt;
+      defaultText = lib.literalExpression "config.microvm.vmHostPackages.stratovirt";
     };
 
     vfkit.extraArgs = mkOption {
@@ -790,6 +809,7 @@ in
       description = "The vfkit package to use.";
       type = types.package;
       default = cfg.vmHostPackages.vfkit;
+      defaultText = lib.literalExpression "config.microvm.vmHostPackages.vfkit";
     };
 
     vfkit.rosetta = {
