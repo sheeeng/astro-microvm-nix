@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Network interfaces - microvm.nix</title>
+        <title>Using Rosetta with vfkit (macOS) - microvm.nix</title>
 
 
         <!-- Custom HTML head -->
@@ -179,99 +179,75 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="network-interfaces"><a class="header" href="#network-interfaces">Network interfaces</a></h1>
-<p>Declare a MicroVM's virtual network interfaces like this in its NixOS
-configuration:</p>
+                        <h1 id="using-rosetta-with-vfkit-on-apple-silicon"><a class="header" href="#using-rosetta-with-vfkit-on-apple-silicon">Using Rosetta with vfkit on Apple Silicon</a></h1>
+<p>Rosetta support enables running x86_64 (Intel) binaries in your ARM64 Linux VM on Apple Silicon Macs. This is useful for running legacy applications or development tools that haven't been ported to ARM yet.</p>
+<h2 id="requirements"><a class="header" href="#requirements">Requirements</a></h2>
+<ul>
+<li>Apple Silicon (M1/M2/M3/etc.) Mac</li>
+<li>macOS with Rosetta installed</li>
+<li>vfkit hypervisor</li>
+</ul>
+<h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
+<p>Enable Rosetta in your MicroVM configuration:</p>
 <pre><code class="language-nix">{
-  microvm.interfaces = [ {
-    type = "tap";
+  microvm = {
+    hypervisor = "vfkit";
 
-    # interface name on the host
-    id = "vm-a1";
-
-    # Ethernet address of the MicroVM's interface, not the host's
-    #
-    # Locally administered have one of 2/6/A/E in the second nibble.
-    mac = "02:00:00:00:00:01";
-  } ];
+    vfkit.rosetta = {
+      enable = true;
+      # Optional: install Rosetta automatically if missing
+      install = true;
+    };
+  };
 }
 </code></pre>
-<h2 id="type--user"><a class="header" href="#type--user"><code>type = "user"</code></a></h2>
-<p>User-mode networking is provided by qemu, kvmtool, and vfkit, providing
-outgoing connectivity to your MicroVM without any further setup.</p>
-<p>As kvmtool seems to lack a built-in DHCP server, additional static IP
-configuration is necessary inside the MicroVM.</p>
-<p><strong>Note:</strong> vfkit (macOS) only supports user-mode networking. TAP and bridge
-networking are not available.</p>
-<h2 id="type--tap"><a class="header" href="#type--tap"><code>type = "tap"</code></a></h2>
-<p>Use a virtual tuntap Ethernet interface. Its name is the value of
-<code>id</code>.</p>
-<p>Some Hypervisors may be able to automatically create these interfaces
-when running as root, which we advise against. Instead, create the
-interfaces before starting a MicroVM:</p>
-<pre><code class="language-bash">sudo ip tuntap add $IFACE_NAME mode tap user $USER
+<p>The NixOS module automatically handles mounting the Rosetta virtiofs share and configuring binfmt to use Rosetta for x86_64 binaries. No additional guest configuration is required.</p>
+<h2 id="usage"><a class="header" href="#usage">Usage</a></h2>
+<p>Once configured, you can run any x86_64 binary in your ARM64 VM. To verify Rosetta is working:</p>
+<pre><code class="language-nix"># Add an x86_64 package to your configuration
+environment.systemPackages = with pkgs; [
+  file  # to verify binary architecture
+  pkgsCross.gnu64.hello  # x86_64 version of hello
+];
 </code></pre>
-<p><strong>Note:</strong> add <code>multi_queue</code> to this command line if the VM is configured
-with more than one CPU core.</p>
-<p>When running MicroVMs through the <code>host</code> module, the tap network
-interfaces are created through a systemd service dependency.</p>
-<h3 id="vhost-net-acceleration"><a class="header" href="#vhost-net-acceleration">vhost-net acceleration</a></h3>
-<p>For high-throughput workloads, enable vhost-net to offload packet
-processing to the kernel instead of QEMU userspace:</p>
-<pre><code class="language-nix">{
-  microvm.interfaces = [ {
-    type = "tap";
-    id = "vm-a1";
-    mac = "02:00:00:00:00:01";
-    tap.vhost = true;  # Enable vhost-net (~10 Gbps vs ~1.5 Gbps)
-  } ];
-}
+<p>Then in the VM:</p>
+<pre><code class="language-bash"># Verify you're running on ARM64
+uname -m
+# Output: aarch64
+
+# Check the binary architecture
+file $(which hello)
+# Output: ELF 64-bit LSB executable, x86-64, ...
+
+# Run the x86_64 binary via Rosetta
+hello
+# Output: Hello, world!
 </code></pre>
-<p>This requires the <code>vhost_net</code> kernel module on the host. The performance
-improvement is significant for workloads with many concurrent connections
-or high bandwidth requirements.</p>
-<p><strong>Note:</strong> Currently only supported with the <code>qemu</code> hypervisor.</p>
-<p>Extend the generated script in the guest configuration like this:</p>
-<pre><code class="language-nix">microvm.binScripts.tap-up = lib.mkAfter ''
-  ${lib.getExe' pkgs.iproute2 "ip"} link set dev 'vm-ixp-as11201p' master 'ixp-peering'
-'';
-</code></pre>
-<h2 id="type--macvtap"><a class="header" href="#type--macvtap"><code>type = "macvtap"</code></a></h2>
-<p><em>MACVTAP</em> interfaces attach to a host's physical network interface,
-joining the same Ethernet segment with a separate MAC address.</p>
-<p>Before running a MicroVM interactively from a package, do the
-following steps manually:</p>
-<pre><code class="language-bash"># Parent interface:
-LINK=eth0
-# MACVTAP interface, as specified under microvm.interfaces.*.id:
-ID=microvm1
-# Create the interface
-sudo ip l add link $LINK name $ID type macvtap mode bridge
-# Obtain the interface index number
-IFINDEX=$(cat /sys/class/net/$ID/ifindex)
-# Grant yourself permission
-sudo chown $USER /dev/tap$IFINDEX
-</code></pre>
-<p>When running MicroVMs through the <code>host</code> module, the macvtap network
-interfaces are created through a systemd service dependency. Per
-interface with <code>type = "macvtap"</code>, a <code>link</code> attribute with the parent
-interface, and <code>mode</code> attribute for the MACVTAP filtering mode must be
-specified.</p>
-<h2 id="type--bridge"><a class="header" href="#type--bridge"><code>type = "bridge"</code></a></h2>
-<p>This mode lets qemu create a tap interface and attach it to a bridge.</p>
-<p>The <code>qemu-bridge-helper</code> binary needs to be setup with the proper
-permissions. See the <code>host</code> module for that. qemu will be run
-<em>without</em> <code>-sandbox on</code> in order for this contraption to work.</p>
+<p>You can use <code>pkgsCross.gnu64.&lt;package&gt;</code> to cross-compile any package from nixpkgs to x86_64 and run it via Rosetta.</p>
+<h2 id="options-reference"><a class="header" href="#options-reference">Options Reference</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>microvm.vfkit.rosetta.enable</code></td><td>bool</td><td><code>false</code></td><td>Enable Rosetta support</td></tr>
+<tr><td><code>microvm.vfkit.rosetta.install</code></td><td>bool</td><td><code>false</code></td><td>Auto-install Rosetta if missing</td></tr>
+<tr><td><code>microvm.vfkit.rosetta.ignoreIfMissing</code></td><td>bool</td><td><code>false</code></td><td>Continue if Rosetta unavailable</td></tr>
+</tbody></table>
+</div>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<ul>
+<li>Only works on Apple Silicon Macs (M-series chips)</li>
+<li>vfkit will fail to start on Intel Macs if Rosetta is enabled</li>
+<li>Performance is slower than native ARM64 execution</li>
+<li>Not all x86_64 binaries may work perfectly</li>
+</ul>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="options.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="output-options.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
 
-                            <a rel="next prefetch" href="shares.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="microvm-options.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
 
@@ -281,11 +257,11 @@ permissions. See the <code>host</code> module for that. qemu will be run
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="options.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="output-options.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
 
-                    <a rel="next prefetch" href="shares.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="microvm-options.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
             </nav>

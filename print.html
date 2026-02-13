@@ -182,9 +182,9 @@
                     <main>
                         <h1 id="intro"><a class="header" href="#intro">Intro</a></h1>
 <p><strong>microvm.nix</strong> is a Flake to run lightweight NixOS virtual machines
-on NixOS. Starting with the reasons why for the remainder of this
+on NixOS and macOS. Starting with the reasons why for the remainder of this
 chapter, this handbook guides you through the provisioning of MicroVMs
-on your NixOS machine.</p>
+on your NixOS or macOS machine.</p>
 <h2 id="compartmentalization"><a class="header" href="#compartmentalization">Compartmentalization</a></h2>
 <p>NixOS makes running services a breeze. Being able to quickly rollback
 configuration is a life-saver. Not so much however on systems that are
@@ -217,7 +217,8 @@ overhead has been reduced a lot by replacing emulated devices with
 <p>This Flake offers you to run your MicroVMs not only on QEMU but with
 other Hypervisors that have been explicitly authored for
 <em>virtio</em>. Some of them are written in Rust, a programming language
-that is renowned for being safer than C.</p>
+that is renowned for being safer than C. On macOS, vfkit leverages
+Apple's native Virtualization.framework for running Linux VMs.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="declaring-nixos-microvms"><a class="header" href="#declaring-nixos-microvms">Declaring NixOS MicroVMs</a></h1>
 <p><img src="demo.gif" alt="Demo" /></p>
 <p>microvm.nix creates virtual machine disk images and runner script
@@ -264,6 +265,9 @@ available for customization. These are the most important ones:</p>
 <tr><td><code>microvm.socket</code></td><td>Control socket for the Hypervisor so that a MicroVM can be shutdown cleanly</td></tr>
 <tr><td><code>microvm.user</code></td><td>(qemu only) User account which Qemu will switch to when started as root</td></tr>
 <tr><td><code>microvm.forwardPorts</code></td><td>(qemu user-networking only) TCP/UDP port forwarding</td></tr>
+<tr><td><code>microvm.vfkit.extraArgs</code></td><td>(vfkit only) Extra arguments to pass to vfkit</td></tr>
+<tr><td><code>microvm.vfkit.logLevel</code></td><td>(vfkit only) Log level: "debug", "info", or "error" (default: "info")</td></tr>
+<tr><td><code>microvm.vfkit.rosetta.enable</code></td><td>(vfkit only) Enable Rosetta for running x86_64 binaries on ARM64 (Apple Silicon only)</td></tr>
 <tr><td><code>microvm.kernelParams</code></td><td>Like <code>boot.kernelParams</code> but will not end up in <code>system.build.toplevel</code>, saving you rebuilds</td></tr>
 <tr><td><code>microvm.storeOnDisk</code></td><td>Enables the store on the boot squashfs even in the presence of a share with the host's <code>/nix/store</code></td></tr>
 <tr><td><code>microvm.writableStoreOverlay</code></td><td>Optional string of the path where all writes to <code>/nix/store</code> should go to.</td></tr>
@@ -289,10 +293,12 @@ configuration:</p>
 }
 </code></pre>
 <h2 id="type--user"><a class="header" href="#type--user"><code>type = "user"</code></a></h2>
-<p>User-mode networking is only provided by qemu and kvmtool, providing
+<p>User-mode networking is provided by qemu, kvmtool, and vfkit, providing
 outgoing connectivity to your MicroVM without any further setup.</p>
 <p>As kvmtool seems to lack a built-in DHCP server, additional static IP
 configuration is necessary inside the MicroVM.</p>
+<p><strong>Note:</strong> vfkit (macOS) only supports user-mode networking. TAP and bridge
+networking are not available.</p>
 <h2 id="type--tap"><a class="header" href="#type--tap"><code>type = "tap"</code></a></h2>
 <p>Use a virtual tuntap Ethernet interface. Its name is the value of
 <code>id</code>.</p>
@@ -305,6 +311,22 @@ interfaces before starting a MicroVM:</p>
 with more than one CPU core.</p>
 <p>When running MicroVMs through the <code>host</code> module, the tap network
 interfaces are created through a systemd service dependency.</p>
+<h3 id="vhost-net-acceleration"><a class="header" href="#vhost-net-acceleration">vhost-net acceleration</a></h3>
+<p>For high-throughput workloads, enable vhost-net to offload packet
+processing to the kernel instead of QEMU userspace:</p>
+<pre><code class="language-nix">{
+  microvm.interfaces = [ {
+    type = "tap";
+    id = "vm-a1";
+    mac = "02:00:00:00:00:01";
+    tap.vhost = true;  # Enable vhost-net (~10 Gbps vs ~1.5 Gbps)
+  } ];
+}
+</code></pre>
+<p>This requires the <code>vhost_net</code> kernel module on the host. The performance
+improvement is significant for workloads with many concurrent connections
+or high bandwidth requirements.</p>
+<p><strong>Note:</strong> Currently only supported with the <code>qemu</code> hypervisor.</p>
 <p>Extend the generated script in the guest configuration like this:</p>
 <pre><code class="language-nix">microvm.binScripts.tap-up = lib.mkAfter ''
   ${lib.getExe' pkgs.iproute2 "ip"} link set dev 'vm-ixp-as11201p' master 'ixp-peering'
@@ -347,7 +369,7 @@ values:</p>
 <ul>
 <li>
 <p><code>9p</code> (default) is built into many hypervisors, allowing you to
-quickly share a directory tree</p>
+quickly share a directory tree. Not supported by vfkit on macOS.</p>
 </li>
 <li>
 <p><code>virtiofs</code> requires a separate virtiofsd service which is started as
@@ -356,6 +378,8 @@ that comes with the <code>microvm.nixosModules.host</code> module.</p>
 <p>If you want to run from the command-line, start <code>bin/virtiofsd-run</code>
 separately.</p>
 <p>Expect <code>virtiofs</code> to yield better performance over <code>9p</code>.</p>
+<p><strong>Note:</strong> vfkit (macOS) has built-in virtiofs support and does not
+require a separate virtiofsd service.</p>
 </li>
 </ul>
 <pre><code class="language-nix">microvm.shares = [ {
@@ -538,7 +562,76 @@ production. Any other NixOS configuration that evaluates the
 <code>microvm.hypervisor</code> option can be wrong when you pick from
 <code>microvm.runners</code> directly. One example would be the defaults set by
 <code>microvm.optimize</code>.</p>
-<div style="break-before: page; page-break-before: always;"></div><h2 id="microvmballoon"><a class="header" href="#microvmballoon">microvm.balloon</a></h2>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="using-rosetta-with-vfkit-on-apple-silicon"><a class="header" href="#using-rosetta-with-vfkit-on-apple-silicon">Using Rosetta with vfkit on Apple Silicon</a></h1>
+<p>Rosetta support enables running x86_64 (Intel) binaries in your ARM64 Linux VM on Apple Silicon Macs. This is useful for running legacy applications or development tools that haven't been ported to ARM yet.</p>
+<h2 id="requirements"><a class="header" href="#requirements">Requirements</a></h2>
+<ul>
+<li>Apple Silicon (M1/M2/M3/etc.) Mac</li>
+<li>macOS with Rosetta installed</li>
+<li>vfkit hypervisor</li>
+</ul>
+<h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
+<p>Enable Rosetta in your MicroVM configuration:</p>
+<pre><code class="language-nix">{
+  microvm = {
+    hypervisor = "vfkit";
+
+    vfkit.rosetta = {
+      enable = true;
+      # Optional: install Rosetta automatically if missing
+      install = true;
+    };
+  };
+}
+</code></pre>
+<p>The NixOS module automatically handles mounting the Rosetta virtiofs share and configuring binfmt to use Rosetta for x86_64 binaries. No additional guest configuration is required.</p>
+<h2 id="usage"><a class="header" href="#usage">Usage</a></h2>
+<p>Once configured, you can run any x86_64 binary in your ARM64 VM. To verify Rosetta is working:</p>
+<pre><code class="language-nix"># Add an x86_64 package to your configuration
+environment.systemPackages = with pkgs; [
+  file  # to verify binary architecture
+  pkgsCross.gnu64.hello  # x86_64 version of hello
+];
+</code></pre>
+<p>Then in the VM:</p>
+<pre><code class="language-bash"># Verify you're running on ARM64
+uname -m
+# Output: aarch64
+
+# Check the binary architecture
+file $(which hello)
+# Output: ELF 64-bit LSB executable, x86-64, ...
+
+# Run the x86_64 binary via Rosetta
+hello
+# Output: Hello, world!
+</code></pre>
+<p>You can use <code>pkgsCross.gnu64.&lt;package&gt;</code> to cross-compile any package from nixpkgs to x86_64 and run it via Rosetta.</p>
+<h2 id="options-reference"><a class="header" href="#options-reference">Options Reference</a></h2>
+<div class="table-wrapper"><table><thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>microvm.vfkit.rosetta.enable</code></td><td>bool</td><td><code>false</code></td><td>Enable Rosetta support</td></tr>
+<tr><td><code>microvm.vfkit.rosetta.install</code></td><td>bool</td><td><code>false</code></td><td>Auto-install Rosetta if missing</td></tr>
+<tr><td><code>microvm.vfkit.rosetta.ignoreIfMissing</code></td><td>bool</td><td><code>false</code></td><td>Continue if Rosetta unavailable</td></tr>
+</tbody></table>
+</div>
+<h2 id="limitations"><a class="header" href="#limitations">Limitations</a></h2>
+<ul>
+<li>Only works on Apple Silicon Macs (M-series chips)</li>
+<li>vfkit will fail to start on Intel Macs if Rosetta is enabled</li>
+<li>Performance is slower than native ARM64 execution</li>
+<li>Not all x86_64 binaries may work perfectly</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h2 id="microvmaliothpackage"><a class="header" href="#microvmaliothpackage">microvm.alioth.package</a></h2>
+<p>The alioth package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em>
+<code>config.microvm.vmHostPackages.alioth</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmballoon"><a class="header" href="#microvmballoon">microvm.balloon</a></h2>
 <p>Whether to enable ballooning.</p>
 <p>By “inflating” or increasing the balloon the host can reduce the VMs
 memory amount and reclaim it for itself.
@@ -559,6 +652,21 @@ boolean</p>
 attribute set of strings concatenated with “\n”</p>
 <p><em>Default:</em>
 <code>{ }</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmcloud-hypervisorpackage"><a class="header" href="#microvmcloud-hypervisorpackage">microvm.cloud-hypervisor.package</a></h2>
+<p>The cloud-hypervisor package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em></p>
+<pre><code>if config.microvm.graphics.enable then
+  config.microvm.vmHostPackages.cloud-hypervisor-graphics
+else
+  config.microvm.vmHostPackages.cloud-hypervisor
+
+</code></pre>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -614,6 +722,16 @@ attribute set of absolute path</p>
 }
 
 </code></pre>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmcrosvmpackage"><a class="header" href="#microvmcrosvmpackage">microvm.crosvm.package</a></h2>
+<p>The crosvm package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em>
+<code>config.microvm.vmHostPackages.crosvm</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -699,6 +817,16 @@ string</p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
+<h2 id="microvmdevicesqemubus"><a class="header" href="#microvmdevicesqemubus">microvm.devices.*.qemu.bus</a></h2>
+<p>QEMU bus to which this device is attached (optional)</p>
+<p><em>Type:</em>
+null or string</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
 <h2 id="microvmdevicesqemudeviceextraargs"><a class="header" href="#microvmdevicesqemudeviceextraargs">microvm.devices.*.qemu.deviceExtraArgs</a></h2>
 <p>Device additional arguments (optional)</p>
 <p><em>Type:</em>
@@ -709,12 +837,73 @@ null or string</p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
+<h2 id="microvmdevicesqemuid"><a class="header" href="#microvmdevicesqemuid">microvm.devices.*.qemu.id</a></h2>
+<p>QEMU device identifier (optional)</p>
+<p><em>Type:</em>
+null or string</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmextraargsscript"><a class="header" href="#microvmextraargsscript">microvm.extraArgsScript</a></h2>
+<p>A script to provide additional arguments for the hypervisor at runtime.</p>
+<p>The script must output a single line with arguments for the hypervisor.</p>
+<p><em>Type:</em>
+null or string</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmfirecrackerpackage"><a class="header" href="#microvmfirecrackerpackage">microvm.firecracker.package</a></h2>
+<p>The firecracker package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em>
+<code>config.microvm.vmHostPackages.firecracker</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
 <h2 id="microvmfirecrackercpu"><a class="header" href="#microvmfirecrackercpu">microvm.firecracker.cpu</a></h2>
 <p>Custom CPU template passed to firecracker.</p>
 <p><em>Type:</em>
 null or (attribute set)</p>
 <p><em>Default:</em>
 <code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmfirecrackerdriveioengine"><a class="header" href="#microvmfirecrackerdriveioengine">microvm.firecracker.driveIoEngine</a></h2>
+<p>Type of IO engine to use for Firecracker drives (disks).</p>
+<p><em>Type:</em>
+one of “Async”, “Sync”</p>
+<p><em>Default:</em>
+<code>"Async"</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmfirecrackerextraargs"><a class="header" href="#microvmfirecrackerextraargs">microvm.firecracker.extraArgs</a></h2>
+<p>Extra arguments to pass to firecracker.</p>
+<p><em>Type:</em>
+list of string</p>
+<p><em>Default:</em>
+<code>[ ]</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmfirecrackerextraconfig"><a class="header" href="#microvmfirecrackerextraconfig">microvm.firecracker.extraConfig</a></h2>
+<p>Extra config to merge into Firecracker JSON configuration</p>
+<p><em>Type:</em>
+open submodule of (JSON value)</p>
+<p><em>Default:</em>
+<code>{ }</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -891,9 +1080,9 @@ boolean</p>
 </ul>
 <h2 id="microvmhypervisor"><a class="header" href="#microvmhypervisor">microvm.hypervisor</a></h2>
 <p>Which hypervisor to use for this MicroVM</p>
-<p>Choose one of: qemu, cloud-hypervisor, firecracker, crosvm, kvmtool, stratovirt, alioth</p>
+<p>Choose one of: qemu, cloud-hypervisor, firecracker, crosvm, kvmtool, stratovirt, alioth, vfkit</p>
 <p><em>Type:</em>
-one of “qemu”, “cloud-hypervisor”, “firecracker”, “crosvm”, “kvmtool”, “stratovirt”, “alioth”</p>
+one of “qemu”, “cloud-hypervisor”, “firecracker”, “crosvm”, “kvmtool”, “stratovirt”, “alioth”, “vfkit”</p>
 <p><em>Default:</em>
 <code>"qemu"</code></p>
 <p><em>Declared by:</em></p>
@@ -972,6 +1161,20 @@ one of “private”, “vepa”, “bridge”, “passthru”, “source”</p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
+<h2 id="microvminterfacestapvhost"><a class="header" href="#microvminterfacestapvhost">microvm.interfaces.*.tap.vhost</a></h2>
+<p>Enable vhost-net for TAP interfaces.</p>
+<p>When enabled, packet processing is offloaded to the kernel’s
+vhost-net module instead of QEMU userspace, significantly
+improving network throughput (~10 Gbps vs ~1.5 Gbps).</p>
+<p>Requires the vhost_net kernel module on the host.</p>
+<p><em>Type:</em>
+boolean</p>
+<p><em>Default:</em>
+<code>false</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
 <h2 id="microvminterfacestype"><a class="header" href="#microvminterfacestype">microvm.interfaces.*.type</a></h2>
 <p>Interface type</p>
 <p><em>Type:</em>
@@ -994,6 +1197,16 @@ package</p>
 <p>Includes boot.kernelParams but doesn’t end up in toplevel, thereby allowing references to toplevel</p>
 <p><em>Type:</em>
 list of string</p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmkvmtoolpackage"><a class="header" href="#microvmkvmtoolpackage">microvm.kvmtool.package</a></h2>
+<p>The kvmtool package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em>
+<code>config.microvm.vmHostPackages.kvmtool</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -1047,6 +1260,23 @@ boolean</p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
+<h2 id="microvmqemupackage"><a class="header" href="#microvmqemupackage">microvm.qemu.package</a></h2>
+<p>The QEMU package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em></p>
+<pre><code>if config.microvm.cpu == null &amp;&amp; config.microvm.vmHostPackages.stdenv.hostPlatform.isLinux then
+  # If no CPU is requested and the host is Linux, use qemu with KVM support (hardware-accelerated)
+  config.microvm.vmHostPackages.qemu_kvm
+else
+  # Different CPU architectures like darwin or Non-Linux use the generic qemu package
+  config.microvm.vmHostPackages.qemu
+
+</code></pre>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
 <h2 id="microvmqemuextraargs"><a class="header" href="#microvmqemuextraargs">microvm.qemu.extraArgs</a></h2>
 <p>Extra arguments to pass to qemu.</p>
 <p><em>Type:</em>
@@ -1072,6 +1302,78 @@ string</p>
 <p>Overwrite the default machine model options.</p>
 <p><em>Type:</em>
 null or (attribute set of string)</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmqemupcierootports"><a class="header" href="#microvmqemupcierootports">microvm.qemu.pcieRootPorts</a></h2>
+<p>A list of PCIe root ports that can be used for hot-plugging PCIe devices.
+This is particularly useful on the Q35 machine type, which does not support
+hot-plugging on the base PCIe root bus (pcie.0). Creating root ports allows
+attaching and detaching PCIe devices at runtime and can also be useful for
+devices that require their own dedicated PCIe slot with a fixed address, etc.
+For additional details see the QEMU PCI Express Guidelines:
+<a href="https://gitlab.com/qemu-project/qemu/-/blob/master/docs/pcie.txt">https://gitlab.com/qemu-project/qemu/-/blob/master/docs/pcie.txt</a></p>
+<p><em>Type:</em>
+list of (submodule)</p>
+<p><em>Default:</em>
+<code>[ ]</code></p>
+<p><em>Example:</em></p>
+<pre><code>[ {
+  bus = "pcie.0";
+  id = "pci_port_0";
+  chassis = 0;
+} ]
+
+</code></pre>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmqemupcierootportsaddr"><a class="header" href="#microvmqemupcierootportsaddr">microvm.qemu.pcieRootPorts.*.addr</a></h2>
+<p>PCIe address on the parent bus.</p>
+<p><em>Type:</em>
+null or string</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmqemupcierootportsbus"><a class="header" href="#microvmqemupcierootportsbus">microvm.qemu.pcieRootPorts.*.bus</a></h2>
+<p>The PCIe bus on which the root port will be created.</p>
+<p><em>Type:</em>
+null or string</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmqemupcierootportschassis"><a class="header" href="#microvmqemupcierootportschassis">microvm.qemu.pcieRootPorts.*.chassis</a></h2>
+<p>The chassis number associated with this PCIe root port.</p>
+<p><em>Type:</em>
+null or signed integer</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmqemupcierootportsid"><a class="header" href="#microvmqemupcierootportsid">microvm.qemu.pcieRootPorts.*.id</a></h2>
+<p>A unique identifier for this PCIe root port.</p>
+<p><em>Type:</em>
+string</p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmqemupcierootportsslot"><a class="header" href="#microvmqemupcierootportsslot">microvm.qemu.pcieRootPorts.*.slot</a></h2>
+<p>PCIe slot number.</p>
+<p><em>Type:</em>
+null or string</p>
 <p><em>Default:</em>
 <code>null</code></p>
 <p><em>Declared by:</em></p>
@@ -1247,6 +1549,16 @@ boolean</p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
 </ul>
+<h2 id="microvmstratovirtpackage"><a class="header" href="#microvmstratovirtpackage">microvm.stratovirt.package</a></h2>
+<p>The stratovirt package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em>
+<code>config.microvm.vmHostPackages.stratovirt</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
 <h2 id="microvmsystemsymlink"><a class="header" href="#microvmsystemsymlink">microvm.systemSymlink</a></h2>
 <p>Whether to inclcude a symlink of <code>config.system.build.toplevel</code> to <code>share/microvm/system</code>.
 This is required for commands like <code>microvm -l</code> to function but removes reference to the uncompressed store content when using a disk image for the nix store.</p>
@@ -1274,6 +1586,81 @@ null or string</p>
 positive integer, meaning &gt;0</p>
 <p><em>Default:</em>
 <code>1</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvfkitpackage"><a class="header" href="#microvmvfkitpackage">microvm.vfkit.package</a></h2>
+<p>The vfkit package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em>
+<code>config.microvm.vmHostPackages.vfkit</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvfkitextraargs"><a class="header" href="#microvmvfkitextraargs">microvm.vfkit.extraArgs</a></h2>
+<p>Extra arguments to pass to vfkit.</p>
+<p><em>Type:</em>
+list of string</p>
+<p><em>Default:</em>
+<code>[ ]</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvfkitloglevel"><a class="header" href="#microvmvfkitloglevel">microvm.vfkit.logLevel</a></h2>
+<p>vfkit log level.</p>
+<p><em>Type:</em>
+null or one of “debug”, “info”, “error”</p>
+<p><em>Default:</em>
+<code>"info"</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvfkitrosettaenable"><a class="header" href="#microvmvfkitrosettaenable">microvm.vfkit.rosetta.enable</a></h2>
+<p>Enable Rosetta support for running x86_64 binaries in ARM64 Linux VMs.
+Only works on Apple Silicon (ARM) Macs.</p>
+<p>When enabled, the Rosetta virtiofs share will be automatically mounted
+and binfmt will be configured to use Rosetta for x86_64 binaries.</p>
+<p><em>Type:</em>
+boolean</p>
+<p><em>Default:</em>
+<code>false</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvfkitrosettaignoreifmissing"><a class="header" href="#microvmvfkitrosettaignoreifmissing">microvm.vfkit.rosetta.ignoreIfMissing</a></h2>
+<p>Continue execution even if Rosetta installation fails or is unavailable.
+Useful for configurations that should work on both ARM and Intel Macs.</p>
+<p><em>Type:</em>
+boolean</p>
+<p><em>Default:</em>
+<code>false</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvfkitrosettainstall"><a class="header" href="#microvmvfkitrosettainstall">microvm.vfkit.rosetta.install</a></h2>
+<p>Automatically install Rosetta if missing.
+If false and Rosetta is not installed, vfkit will fail to start.</p>
+<p><em>Type:</em>
+boolean</p>
+<p><em>Default:</em>
+<code>false</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
+</ul>
+<h2 id="microvmvirtiofsdpackage"><a class="header" href="#microvmvirtiofsdpackage">microvm.virtiofsd.package</a></h2>
+<p>The virtiofsd package to use.</p>
+<p><em>Type:</em>
+package</p>
+<p><em>Default:</em>
+<code>config.microvm.vmHostPackages.virtiofsd</code></p>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/microvm/options.nix">microvm.nix/nixos-modules/microvm/options.nix</a></li>
@@ -1327,7 +1714,7 @@ string or (unsigned integer, meaning &gt;=0)</p>
 <h2 id="microvmvmhostpackages"><a class="header" href="#microvmvmhostpackages">microvm.vmHostPackages</a></h2>
 <p>If set, overrides the default host package.</p>
 <p><em>Type:</em>
-null or Nixpkgs package set</p>
+Nixpkgs package set</p>
 <p><em>Default:</em>
 <code>if config.microvm.cpu == null then pkgs else pkgs.buildPackages</code></p>
 <p><em>Example:</em>
@@ -1978,6 +2365,34 @@ as a NixOS module, for building <strong>without</strong> a flake.</p>
 null or (Toplevel NixOS config)</p>
 <p><em>Default:</em>
 <code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
+</ul>
+<h2 id="microvmvmsnameevaluatedconfig"><a class="header" href="#microvmvmsnameevaluatedconfig">microvm.vms.&lt;name&gt;.evaluatedConfig</a></h2>
+<p>An already evaluated configuration of this MicroVM.
+Allows supplying an already evaluated configuration or an alternative configuration evaluation function instead of NixOS’s default eval-config.</p>
+<p><em>Type:</em>
+null or unspecified value</p>
+<p><em>Default:</em>
+<code>null</code></p>
+<p><em>Declared by:</em></p>
+<ul>
+<li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
+</ul>
+<h2 id="microvmvmsnameextramodules"><a class="header" href="#microvmvmsnameextramodules">microvm.vms.&lt;name&gt;.extraModules</a></h2>
+<p>This option is only respected when <code>config</code> is specified.</p>
+<p>A list of additional NixOS modules to be merged into
+the MicroVM’s system configuration.</p>
+<p><em>Type:</em>
+list of module</p>
+<p><em>Default:</em></p>
+<pre><code>[
+  flakeInputs.some-project.nixosModules.example
+  flakeInputs.another-project.nixosModules.default
+]
+
+</code></pre>
 <p><em>Declared by:</em></p>
 <ul>
 <li><a href="https://github.com/microvm-nix/microvm.nix/tree/main/nixos-modules/host/options.nix">microvm.nix/nixos-modules/host/options.nix</a></li>
