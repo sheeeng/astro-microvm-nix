@@ -867,7 +867,7 @@ in
       type = with types; nullOr (enum [
         "never" "prefer" "mandatory"
       ]);
-      default = null;
+      default = "prefer";
       description = ''
         When to use file handles to reference inodes instead of O_PATH file descriptors
         (never, prefer, mandatory)
