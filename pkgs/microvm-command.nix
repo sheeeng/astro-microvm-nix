@@ -250,10 +250,30 @@ writeShellScriptBin "microvm" ''
           ;;
       esac
 
+      SSH_EXTRA_OPTS=()
+      SSH_REMOTE_CMD=()
+      if [ "$#" -gt 0 ] && [ "$1" = "--" ]; then
+        shift
+        SSH_EXTRA_OPTS=("$@")
+      else
+        SSH_REMOTE_CMD=("$@")
+      fi
+
+      HAS_LOGIN_OPT=false
+      for opt in "''${SSH_REMOTE_CMD[@]}"; do
+        case "$opt" in
+          -l|--login)
+            HAS_LOGIN_OPT=true
+            break
+          ;;
+        esac
+      done
+      if [ "$HAS_LOGIN_OPT" = false ]; then
+        SSH_REMOTE_CMD=("-l" "root" "''${SSH_REMOTE_CMD[@]}")
+      fi
+
       echo -e "${colored "boldCyan" "Connecting to $NAME via VSOCK..."}"
-      # VSOCK is a local host-to-guest transport without network exposure,
-      # and VM host keys change on each rebuild - skip known_hosts checks.
-      exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -l root "$SSH_TARGET" "$@"
+      exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "''${SSH_EXTRA_OPTS[@]}" "$SSH_TARGET" "''${SSH_REMOTE_CMD[@]}"
       ;;
   esac
 ''

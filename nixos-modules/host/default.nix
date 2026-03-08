@@ -1,4 +1,9 @@
-{ pkgs, config, lib, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  ...
+}:
 let
   inherit (config.microvm) stateDir;
   microvmCommand = pkgs.callPackage ../../pkgs/microvm-command.nix {
@@ -127,12 +132,6 @@ in
         after = lib.optionals runner.registerWithMachined [
           "systemd-machined.service"
         ];
-        serviceConfig.ExecStartPost = lib.optionals runner.registerWithMachined [
-          "+${stateDir}/${name}/current/bin/microvm-register $MAINPID"
-        ];
-        serviceConfig.ExecStopPost = lib.optionals runner.registerWithMachined [
-          "+${stateDir}/${name}/current/bin/microvm-unregister"
-        ];
       };
       "microvm-tap-interfaces@${name}" = {
         serviceConfig.X-RestartIfChanged = [ "" microvmConfig.restartIfChanged ];
@@ -249,6 +248,7 @@ in
         ];
         after = [
           "network.target"
+          "systemd-modules-load.service"
           "microvm-tap-interfaces@%i.service"
           "microvm-macvtap-interfaces@%i.service"
           "microvm-pci-devices@%i.service"
@@ -265,6 +265,12 @@ in
           WorkingDirectory = "${stateDir}/%i";
           ExecStart = "${stateDir}/%i/current/bin/microvm-run";
           ExecStop = "${stateDir}/%i/booted/bin/microvm-shutdown";
+          ExecStartPost = [
+            "+${pkgs.runtimeShell} -c 'if [ -x ${stateDir}/%i/current/bin/microvm-register ]; then ${stateDir}/%i/current/bin/microvm-register $MAINPID; fi'"
+          ];
+          ExecStopPost = [
+            "+${pkgs.runtimeShell} -c 'if [ -x ${stateDir}/%i/current/bin/microvm-unregister ]; then ${stateDir}/%i/current/bin/microvm-unregister; fi'"
+          ];
           TimeoutSec = config.microvm.host.startupTimeout;
           Restart = "always";
           RestartSec = "5s";

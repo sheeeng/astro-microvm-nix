@@ -524,9 +524,11 @@ in
         UUID for this MicroVM, used for:
         - Registration with systemd-machined
         - SMBIOS system UUID (QEMU only)
-        - Guest /etc/machine-id initialization
+        - Guest /etc/machine-id initialization when explicitly set
 
-        If null, a deterministic UUIDv5 is generated from the hostname.
+        If null, a deterministic UUIDv5 is generated at runtime from the hostname
+        for machined registration and SMBIOS UUID.
+
         Format: 8-4-4-4-12 hex digits (standard UUID format).
       '';
     };
