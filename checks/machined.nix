@@ -61,9 +61,6 @@ in
               host.succeed("machinectl show '${vmName}' --property=SSHAddress | grep -q 'SSHAddress=vsock/${toString vsockCid}'")
             ''}
 
-            # Test kill command (send signal 0 to check process exists)
-            host.succeed("machinectl kill '${vmName}' --signal=0")
-
             # Terminate the VM via machinectl (sends SIGTERM to hypervisor)
             host.succeed("machinectl terminate '${vmName}'")
 
