@@ -100,7 +100,7 @@ let
         "Id" "ay" ''${#UUID_BYTE_ARRAY[@]} "''${UUID_BYTE_ARRAY[@]}"
         "Service" "s" "microvm.nix"
         "Class" "s" "vm"
-        "LeaderPID" "u" "$LEADER_PID"
+        "LeaderPIDFD" "h" "PIDFD"
         "RootDirectory" "s" "/"
       )
 
@@ -121,12 +121,23 @@ let
 
       EX_ARGS[1]="$EX_PROP_COUNT"
 
-      ${vmHostPackages.systemd}/bin/busctl call \
+      # This is our very poor mans method to get around upstream pid recycling safety features :)
+      ${lib.getExe vmHostPackages.python3} - \
+        ${vmHostPackages.systemd}/bin/busctl call \
         org.freedesktop.machine1 \
         /org/freedesktop/machine1 \
         org.freedesktop.machine1.Manager \
         RegisterMachineEx "sa(sv)" \
-        "''${EX_ARGS[@]}"
+        "''${EX_ARGS[@]}" \
+        <<EOF
+    import os; import subprocess; import sys
+    try:
+      pidfd = os.pidfd_open($LEADER_PID, 0)
+    except AttributeError:
+      print("Error: Which NixOS version are you running that pidfd_open syscall is not available?!")
+      exit(1)
+    subprocess.run([str(pidfd) if x == 'PIDFD' else x for x in sys.argv[1:]], pass_fds=[pidfd])
+    EOF
     elif [ "$NUM_IFS" -gt 0 ]; then
       ${vmHostPackages.systemd}/bin/busctl call \
         org.freedesktop.machine1 \
