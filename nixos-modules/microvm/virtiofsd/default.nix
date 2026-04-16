@@ -71,7 +71,7 @@ in
           );
 
       in ''
-        exec ${supervisord} --configuration ${supervisordConfigFile}
+        exec ${supervisord} --configuration ${supervisordConfigFile} "$@"
       '';
   };
 }
