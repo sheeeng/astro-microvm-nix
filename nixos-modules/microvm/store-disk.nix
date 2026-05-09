@@ -64,7 +64,7 @@ in
         config.microvm.storeDiskType
       ];
 
-      microvm.storeDisk = pkgs.runCommandLocal "microvm-store-disk.${config.microvm.storeDiskType}" {
+      microvm.storeDisk = pkgs.buildPackages.runCommandLocal "microvm-store-disk.${config.microvm.storeDiskType}" {
         nativeBuildInputs = [
           pkgs.buildPackages.time
           pkgs.buildPackages.bubblewrap
@@ -95,7 +95,7 @@ in
       '';
     })
 
-    (lib.mkIf (config.microvm.guest.enable && config.nix.enable) {
+    (lib.mkIf (config.microvm.registerClosure && config.nix.enable) {
       microvm.kernelParams = [
         "regInfo=${regInfo}/registration"
       ];

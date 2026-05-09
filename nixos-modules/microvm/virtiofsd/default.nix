@@ -5,7 +5,7 @@ let
     proto == "virtiofs"
   ) config.microvm.shares;
 
-  requiresVirtiofsd = virtiofsShares != [];
+  requiresVirtiofsd = virtiofsShares != [] && config.microvm.hypervisor != "vfkit";
 
   inherit (pkgs.python3Packages) supervisor;
   supervisord = lib.getExe' supervisor "supervisord";
@@ -16,7 +16,10 @@ in
     virtiofsd-run =
       let
         supervisordConfig = {
-          supervisord.nodaemon = true;
+          supervisord = {
+            nodaemon = true;
+            user = "root";
+          };
 
           "eventlistener:notify" = {
             command = pkgs.writers.writePython3 "supervisord-event-handler" { } (
@@ -28,19 +31,18 @@ in
             events = "PROCESS_STATE";
           };
         } // builtins.listToAttrs (
-          map ({ tag, socket, source, readOnly, ... }: {
+          map ({ tag, socket, source, readOnly, cache, ... }: {
             name = "program:virtiofsd-${tag}";
             value = {
               stderr_syslog = true;
               stdout_syslog = true;
-              autorestart = true;
               command = pkgs.writeShellScript "virtiofsd-${tag}" ''
                 if [ $(id -u) = 0 ]; then
                   OPT_RLIMIT="--rlimit-nofile 1048576"
                 else
                   OPT_RLIMIT=""
                 fi
-                exec ${lib.getExe pkgs.virtiofsd} \
+                exec ${lib.getExe config.microvm.virtiofsd.package} \
                   --socket-path=${lib.escapeShellArg socket} \
                   ${lib.optionalString (config.microvm.virtiofsd.group != null)
                   "--socket-group=${config.microvm.virtiofsd.group}"
@@ -49,6 +51,7 @@ in
                   $OPT_RLIMIT \
                   --thread-pool-size ${toString config.microvm.virtiofsd.threadPoolSize} \
                   --posix-acl --xattr \
+                  --cache=${cache} \
                   ${lib.optionalString (config.microvm.virtiofsd.inodeFileHandles != null)
                     "--inode-file-handles=${config.microvm.virtiofsd.inodeFileHandles}"
                   } \
@@ -68,15 +71,7 @@ in
           );
 
       in ''
-        exec ${supervisord} --configuration ${supervisordConfigFile}
+        exec ${supervisord} --configuration ${supervisordConfigFile} "$@"
       '';
-
-    virtiofsd-reload = ''
-      exec ${supervisorctl} reload
-    '';
-
-    virtiofsd-shutdown = ''
-      exec ${supervisorctl} stop
-    '';
   };
 }

@@ -28,8 +28,14 @@
       "overlay"
     ];
 
-    microvm.kernelParams = config.boot.kernelParams ++ [
-      "init=${config.system.build.toplevel}/init"
+    microvm.kernelParams = let
+      # When a store disk is used, we can drop references to the packed contents as the squashfs/erofs contains all paths.
+      toplevel = if config.microvm.storeOnDisk then
+        builtins.unsafeDiscardStringContext config.system.build.toplevel
+      else
+        config.system.build.toplevel;
+    in config.boot.kernelParams ++ [
+      "init=${toplevel}/init"
     ];
 
     # modules that consume boot time but have rare use-cases
@@ -52,5 +58,14 @@
         generators = { systemd-gpt-auto-generator = "/dev/null"; };
       };
 
+    # Set /etc/machine-id from machineId if provided
+    # This ensures the guest machine-id matches the UUID passed to machined and SMBIOS
+    environment.etc."machine-id" = lib.mkIf (config.microvm.machineId != null) {
+      text = lib.replaceString "-" "" config.microvm.machineId + "\n";
+    };
+    # Generate hostId from machine-id like systemd would do
+    networking.hostId = lib.mkIf (config.microvm.machineId != null) (lib.mkDefault (
+      builtins.substring 0 8 config.microvm.machineId
+    ));
   };
 }

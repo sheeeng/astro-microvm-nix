@@ -19,8 +19,10 @@ in
     ./pci-devices.nix
     ./virtiofsd
     ./graphics.nix
+    ./rosetta.nix
     ./optimization.nix
     ./ssh-deploy.nix
+    ./vsock-ssh.nix
   ];
 
   config = {

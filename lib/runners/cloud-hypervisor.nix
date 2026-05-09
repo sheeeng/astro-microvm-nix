@@ -24,18 +24,18 @@ let
   kernelPath = {
     x86_64-linux = "${kernel.dev}/vmlinux";
     aarch64-linux = "${kernel.out}/${pkgs.stdenv.hostPlatform.linux-kernel.target}";
-  }.${pkgs.stdenv.system};
+  }.${pkgs.stdenv.hostPlatform.system};
 
   kernelConsoleDefault =
-    if pkgs.stdenv.system == "x86_64-linux"
+    if pkgs.stdenv.hostPlatform.system == "x86_64-linux"
     then "earlyprintk=ttyS0 console=ttyS0"
-    else if pkgs.stdenv.system == "aarch64-linux"
+    else if pkgs.stdenv.hostPlatform.system == "aarch64-linux"
     then "console=ttyAMA0"
     else "";
 
   kernelConsole = lib.optionalString (!hasUserSerial || userSerial == "tty") kernelConsoleDefault;
 
-  kernelCmdLine = "${kernelConsole} reboot=t panic=-1 ${builtins.unsafeDiscardStringContext (toString microvmConfig.kernelParams)}";
+  kernelCmdLine = "${kernelConsole} reboot=t panic=-1 ${toString microvmConfig.kernelParams}";
 
 
   userVSockOpts = (extractOptValues "--vsock" extraArgs).values;
@@ -104,8 +104,8 @@ let
 
   # cloud-hypervisor >= 30.0 < 36.0 temporarily replaced clap with argh
   hasArghSyntax =
-    builtins.compareVersions pkgs.cloud-hypervisor.version "30.0" >= 0 &&
-    builtins.compareVersions pkgs.cloud-hypervisor.version "36.0" < 0;
+    builtins.compareVersions cloudhypervisorPkg.version "30.0" >= 0 &&
+    builtins.compareVersions cloudhypervisorPkg.version "36.0" < 0;
   arg =
     if hasArghSyntax
     then switch: params:
@@ -138,6 +138,8 @@ let
       throw "Use `microvm.cloud-hypervisor.platformOEMStrings` instead of passing oem_strings via --platform"
     else
       lib.concatStringsSep "," (oemStringOptions ++ userPlatformOpts);
+
+  cloudhypervisorPkg = microvmConfig.cloud-hypervisor.package;
 in {
   inherit tapMultiQueue supportsNotifySocket;
 
@@ -179,10 +181,7 @@ in {
     then throw "cloud-hypervisor does not support credentialFiles"
     else lib.escapeShellArgs (
       [
-        (if graphics.enable
-         then "${pkgs.cloud-hypervisor-graphics}/bin/cloud-hypervisor"
-         else "${pkgs.cloud-hypervisor}/bin/cloud-hypervisor"
-        )
+        "${cloudhypervisorPkg}/bin/cloud-hypervisor"
         "--cpus" "boot=${toString vcpu}"
         "--watchdog"
         "--kernel" kernelPath
@@ -211,7 +210,7 @@ in {
           readonly = "on";
         } // mqOps))
         ++
-        map ({ image, serial, direct, readOnly, ... }:
+        map ({ image, serial, direct, readOnly, imageType, ... }:
           opsMapped (
             {
               path = toString image;
@@ -223,6 +222,7 @@ in {
                 if readOnly
                 then "on"
                 else "off";
+              image_type = toString imageType;
             } //
             lib.optionalAttrs (serial != null) {
               inherit serial;
@@ -290,7 +290,7 @@ in {
   setBalloonScript =
     if socket != null
     then ''
-      ${pkgs.cloud-hypervisor}/bin/ch-remote --api-socket ${socket} resize --balloon $SIZE"M"
+      ${cloudhypervisorPkg}/bin/ch-remote --api-socket ${socket} resize --balloon $SIZE"M"
     ''
     else null;
 

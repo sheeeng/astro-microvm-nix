@@ -7,55 +7,38 @@
 
 let
   inherit (pkgs) lib;
-  inherit (pkgs.stdenv) system;
+  inherit (pkgs.stdenv.hostPlatform) system;
   inherit (microvmConfig) vmHostPackages;
 
   enableLibusb = pkg: pkg.overrideAttrs (oa: {
     configureFlags = oa.configureFlags ++ [
       "--enable-libusb"
     ];
-    buildInputs = oa.buildInputs ++ (with pkgs; [
-      libusb1
-    ]);
+    buildInputs = oa.buildInputs ++ [
+      vmHostPackages.libusb1
+    ];
   });
 
-  minimizeQemuClosureSize = pkg: (pkg.override (oa: {
+  minimizeQemuClosureSize = pkg: pkg.override (oa: {
     # standin for disabling everything guilike by hand
     nixosTestRunner =
       if graphics.enable
       then oa.nixosTestRunner or false
       else true;
-    enableDocs = false;
-  })).overrideAttrs (oa: {
-    postFixup = ''
-      ${oa.postFixup or ""}
-      # This particular firmware causes 192mb of closure size
-      ${lib.optionalString (system != "aarch64-linux") "rm -rf $out/share/qemu/edk2-arm-*"}
-    '';
   });
 
   overrideQemu = x: lib.pipe x (
     lib.optional requireUsb enableLibusb
     ++ lib.optional microvmConfig.optimize.enable minimizeQemuClosureSize
   );
-  qemuPkg =
-    if microvmConfig.cpu == null && vmHostPackages.stdenv.hostPlatform.isLinux
-    then
-      # If no CPU is requested and the host is Linux, use qemu with KVM support (hardware-accelerated)
-      vmHostPackages.qemu_kvm
-    else
-      # Different CPU architectures like darwin or Non-Linux use the generic qemu package
-      vmHostPackages.qemu;
-
-  qemu = overrideQemu qemuPkg;
+  qemu = overrideQemu microvmConfig.qemu.package;
 
   aioEngine = if vmHostPackages.stdenv.hostPlatform.isLinux
     then "io_uring"
     else "threads";
 
-  inherit (microvmConfig) hostName vcpu mem balloon initialBalloonMem deflateOnOOM hotplugMem hotpluggedMem user interfaces shares socket forwardPorts devices vsock graphics storeOnDisk kernel initrdPath storeDisk credentialFiles;
-  inherit (microvmConfig.qemu) machine extraArgs serialConsole;
-
+  inherit (microvmConfig) hostName machineId vcpu mem balloon initialBalloonMem deflateOnOOM hotplugMem hotpluggedMem user interfaces shares socket forwardPorts devices vsock graphics storeOnDisk kernel initrdPath storeDisk credentialFiles;
+  inherit (microvmConfig.qemu) machine extraArgs serialConsole pcieRootPorts;
 
   volumes = withDriveLetters microvmConfig;
 
@@ -102,6 +85,7 @@ let
         pit = "off";
         pic = "off";
         pcie = if requirePci then "on" else "off";
+        rtc = "on";
         usb = if requireUsb then "on" else "off";
       };
       aarch64-linux = {
@@ -143,11 +127,13 @@ let
 
   tapMultiQueue = vcpu > 1;
 
+  useHotPlugMemory = hotplugMem > 0;
+
   forwardingOptions = lib.concatMapStrings ({ proto, from, host, guest }: {
     host = "hostfwd=${proto}:${host.address}:${toString host.port}-" +
            "${guest.address}:${toString guest.port},";
     guest = "guestfwd=${proto}:${guest.address}:${toString guest.port}-" +
-            "cmd:${pkgs.netcat}/bin/nc ${host.address} ${toString host.port},";
+            "cmd:${vmHostPackages.netcat}/bin/nc ${host.address} ${toString host.port},";
   }.${from}) forwardPorts;
 
   writeQmp = data: ''
@@ -177,10 +163,6 @@ lib.warnIf (mem == 2048) ''
 
   command = if initialBalloonMem != 0
   then throw "qemu does not support initialBalloonMem"
-  else if hotplugMem != 0
-  then throw "qemu does not support hotplugMem"
-  else if hotpluggedMem != 0
-  then throw "qemu does not support hotpluggedMem"
   else lib.escapeShellArgs (
     [
       "${qemu}/bin/qemu-system-${arch}"
@@ -197,7 +179,36 @@ lib.warnIf (mem == 2048) ''
 
       "-chardev" "stdio,id=stdio,signal=off"
       "-device" "virtio-rng-${devType}"
+    ] ++ lib.optionals (machineId != null) [
+      "-smbios" "type=1,uuid=${machineId}"
     ] ++
+      # Create PCIe root ports before vfio-pci devices that might require them
+      builtins.concatMap ({ id, bus, chassis, slot, addr, ... }:
+        [ "-device" "pcie-root-port,id=${id}${
+            lib.optionalString (bus != null) ",bus=${bus}" +
+            lib.optionalString (chassis != null) ",chassis=${toString chassis}" +
+            lib.optionalString (slot != null) ",slot=${slot}" +
+            lib.optionalString (addr != null) ",addr=${addr}"
+          }"
+        ]
+      ) pcieRootPorts
+    )
+    + " " + # Move vfio-pci outside of escapeShellArgs
+    lib.concatStringsSep " " (lib.concatMap ({ bus, path, qemu,... }: {
+      pci = [
+        "-device" "vfio-pci,host=${path},multifunction=on${
+          lib.optionalString (qemu.id != null) ",id=${qemu.id}" +
+          lib.optionalString (qemu.bus != null) ",bus=${qemu.bus}" +
+          # Allow to pass additional arguments to pci device
+          lib.optionalString (qemu.deviceExtraArgs != null) ",${qemu.deviceExtraArgs}"
+        }"
+      ];
+      usb = [
+        "-device" "usb-host,${path}"
+      ];
+    }.${bus}) devices)
+    + " " +
+    lib.escapeShellArgs(
     builtins.concatMap (fwCfgOption: ["-fw_cfg" fwCfgOption]) fwCfgOptions ++
     lib.optionals serialConsole [
       "-serial" "chardev:stdio"
@@ -209,33 +220,43 @@ lib.warnIf (mem == 2048) ''
     lib.optionals (system == "x86_64-linux") [
       "-device" "i8042"
 
-      "-append" "${kernelConsole} reboot=t panic=-1 ${builtins.unsafeDiscardStringContext (toString microvmConfig.kernelParams)}"
+      "-append" "${kernelConsole} reboot=t panic=-1 ${toString microvmConfig.kernelParams}"
     ] ++
     lib.optionals (system == "aarch64-linux") [
-      "-append" "${kernelConsole} reboot=t panic=-1 ${builtins.unsafeDiscardStringContext (toString microvmConfig.kernelParams)}"
+      "-append" "${kernelConsole} reboot=t panic=-1 ${toString microvmConfig.kernelParams}"
     ] ++
     lib.optionals storeOnDisk [
       "-drive" "id=store,format=raw,read-only=on,file=${storeDisk},if=none,aio=${aioEngine}"
       "-device" "virtio-blk-${devType},drive=store${lib.optionalString (devType == "pci") ",disable-legacy=on"}"
     ] ++
-    (if graphics.enable
-     then [
-      "-display" "gtk,gl=on"
-      "-device" "virtio-vga-gl"
-      "-device" "qemu-xhci"
-      "-device" "usb-tablet"
-      "-device" "usb-kbd"
-     ]
-     else [
-      "-nographic"
-     ]) ++
+       (if graphics.enable then (
+       let
+         displayArgs = {
+           cocoa = [
+             "-display" "cocoa" "-device" "virtio-gpu"
+           ];
+           gtk = [
+             "-display" "gtk,gl=on" "-device" "virtio-vga-gl"
+           ];
+         }.${graphics.backend};
+       in
+         displayArgs ++ [
+           "-device" "qemu-xhci"
+           "-device" "usb-tablet"
+           "-device" "usb-kbd"
+         ]
+       ) else [ "-nographic" ]) ++
     lib.optionals canSandbox [
       "-sandbox" "on"
     ] ++
     lib.optionals (user != null) [ "-user" user ] ++
     lib.optionals (socket != null) [ "-qmp" "unix:${socket},server,nowait" ] ++
     lib.optionals balloon [
-	 "-device" ("virtio-balloon,free-page-reporting=on,id=balloon0" + lib.optionalString (deflateOnOOM) ",deflate-on-oom=on")
+	    "-device" ("virtio-balloon,free-page-reporting=on,id=balloon0" + lib.optionalString (deflateOnOOM) ",deflate-on-oom=on")
+    ] ++
+    lib.optionals useHotPlugMemory [
+      "-object" "memory-backend-ram,id=vmem0,size=${toString hotplugMem}M"
+      "-device" "virtio-mem-pci,id=vm0,memdev=vmem0,requested-size=${toString hotpluggedMem}M"
     ] ++
     builtins.concatMap ({ image, letter, serial, direct, readOnly, ... }:
       [ "-drive"
@@ -269,7 +290,7 @@ lib.warnIf (mem == 2048) ''
       forwardPorts != [] &&
       ! builtins.any ({ type, ... }: type == "user") interfaces
     ) "${hostName}: forwardPortsOptions only running with user network" (
-      builtins.concatMap ({ type, id, mac, bridge, ... }: [
+      builtins.concatMap ({ type, id, mac, bridge, tap ? {}, ... }: [
         "-netdev" (
           lib.concatStringsSep "," (
             [
@@ -285,6 +306,9 @@ lib.warnIf (mem == 2048) ''
             ++ lib.optionals (type == "tap") [
               "ifname=${id}"
               "script=no" "downscript=no"
+            ]
+            ++ lib.optionals (type == "tap" && tap.vhost or false) [
+              "vhost=on"
             ]
             ++ lib.optionals (type == "macvtap") [ (
               let
@@ -322,19 +346,7 @@ lib.warnIf (mem == 2048) ''
     ]
     ++
     extraArgs
-  )
-  + " " + # Move vfio-pci outside of
-  lib.concatStringsSep " " (lib.concatMap ({ bus, path, qemu,... }: {
-    pci = [
-      "-device" "vfio-pci,host=${path},multifunction=on${
-        # Allow to pass additional arguments to pci device
-        lib.optionalString (qemu.deviceExtraArgs != null) ",${qemu.deviceExtraArgs}"
-      }"
-    ];
-    usb = [
-      "-device" "usb-host,${path}"
-    ];
-  }.${bus}) devices);
+  );
 
   canShutdown = socket != null;
 
@@ -342,6 +354,11 @@ lib.warnIf (mem == 2048) ''
     if socket != null
     then
       ''
+        # Exit gracefully if QEMU is already gone (e.g., killed by machinectl)
+        if [ ! -S ${socket} ]; then
+          exit 0
+        fi
+
         (
           ${writeQmp { execute = "qmp_capabilities"; }}
           ${writeQmp {

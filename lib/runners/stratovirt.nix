@@ -6,7 +6,10 @@
 }:
 
 let
-  inherit (pkgs) lib system;
+  inherit (pkgs) lib;
+  inherit (pkgs.stdenv.hostPlatform) system;
+
+  stratovirtPkg = microvmConfig.stratovirt.package;
 
   inherit (microvmConfig)
     hostName
@@ -38,8 +41,8 @@ let
     if requirePci
     then
       if addr < 32
-      then "pci,bus=pcie.0,addr=0x${pkgs.lib.toHexString addr}"
-      else throw "Too big PCI addr: ${pkgs.lib.toHexString addr}"
+      then "pci,bus=pcie.0,addr=0x${lib.toHexString addr}"
+      else throw "Too big PCI addr: ${lib.toHexString addr}"
     else "device";
 
   enumerate = n: xs:
@@ -58,9 +61,9 @@ let
           ({ proto, from, host, guest }:
             if from == "host"
               then "hostfwd=${proto}:${host.address}:${toString host.port}-" +
-                   "${guest.address}:${toString guest.port},"
+                "${guest.address}:${toString guest.port},"
               else "guestfwd=${proto}:${guest.address}:${toString guest.port}-" +
-                   "cmd:${pkgs.netcat}/bin/nc ${host.address} ${toString host.port},"
+                "cmd:${pkgs.netcat}/bin/nc ${host.address} ${toString host.port},"
           );
       in
       [ forwardingOptions ];
@@ -84,7 +87,7 @@ in {
     else lib.escapeShellArgs (
     [
       "${pkgs.expect}/bin/unbuffer"
-      "${pkgs.stratovirt}/bin/stratovirt"
+      "${stratovirtPkg}/bin/stratovirt"
       "-name" hostName
       "-machine" machine
       "-m" (toString mem)
@@ -92,7 +95,7 @@ in {
 
       "-kernel" "${kernel}/bzImage"
       "-initrd" initrdPath
-      "-append" "console=${console} edd=off reboot=t panic=-1 ${builtins.unsafeDiscardStringContext (toString microvmConfig.kernelParams)}"
+      "-append" "console=${console} edd=off reboot=t panic=-1 ${toString microvmConfig.kernelParams}"
 
       "-serial" "stdio"
       "-object" "rng-random,id=rng,filename=/dev/random"
