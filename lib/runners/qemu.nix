@@ -76,26 +76,31 @@ let
   machineOpts =
     if microvmConfig.qemu.machineOpts != null
     then microvmConfig.qemu.machineOpts
-    else {
-      x86_64-linux = {
-        inherit accel;
-        mem-merge = "on";
-        acpi = "on";
-      } // lib.optionalAttrs (machine == "microvm") {
-        pit = "off";
-        pic = "off";
-        pcie = if requirePci then "on" else "off";
-        rtc = "on";
-        usb = if requireUsb then "on" else "off";
-      };
-      aarch64-linux = {
-        inherit accel;
-        gic-version = "max";
-      };
-      aarch64-darwin = {
-        inherit accel;
-      };
-    }.${system};
+    else
+      let
+        x86MachineOpts = {
+          inherit accel;
+          mem-merge = "on";
+          acpi = "on";
+        } // lib.optionalAttrs (machine == "microvm") {
+          pit = "off";
+          pic = "off";
+          pcie = if requirePci then "on" else "off";
+          rtc = "on";
+          usb = if requireUsb then "on" else "off";
+        };
+      in
+      {
+        x86_64-linux = x86MachineOpts;
+        x86_64-darwin = x86MachineOpts;
+        aarch64-linux = {
+          inherit accel;
+          gic-version = "max";
+        };
+        aarch64-darwin = {
+          inherit accel;
+        };
+      }.${system};
 
   machineConfig = builtins.concatStringsSep "," (
     [ machine ] ++
