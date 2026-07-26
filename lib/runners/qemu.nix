@@ -44,7 +44,6 @@ let
   volumes = withDriveLetters microvmConfig;
 
   requireUsb =
-    graphics.enable ||
     lib.any ({ bus, ... }: bus == "usb") microvmConfig.devices;
 
   arch = builtins.head (builtins.split "-" system);
