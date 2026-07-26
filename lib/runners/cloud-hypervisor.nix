@@ -170,9 +170,21 @@ in {
 
     # Start socat to forward systemd notify socket over vsock
     if [ -n "''${NOTIFY_SOCKET:-}" ]; then
-      # -T2 is required because cloud-hypervisor does not handle partial
-      # shutdown of the stream, like systemd v256+ does.
-      ${pkgs.socat}/bin/socat -T2 UNIX-LISTEN:${vsockPath}_8888,fork UNIX-SENDTO:$NOTIFY_SOCKET &
+      # Both timeouts must be short: since systemd v256, every sd_notify()
+      # over an AF_VSOCK stream socket blocks in recv() until the peer
+      # closes, and guest PID1 sends STATUS= notifications every 333ms while
+      # boot jobs are running - each one stalls PID1's whole event loop
+      # until the guest sees EOF, serializing boot.
+      #
+      # -t0: with cloud-hypervisor >= 53.0 the guest's half-close is
+      #   propagated, so socat sees EOF and must terminate the connection
+      #   immediately instead of waiting its default 0.5s drain timeout
+      #   (there is no reverse traffic to drain - the other side is a
+      #   datagram socket).
+      # -T0.2: with cloud-hypervisor <= 52.0 the half-close is never
+      #   propagated, so only this inactivity timeout closes the connection
+      #   and delivers the EOF.
+      ${pkgs.socat}/bin/socat -t0 -T0.2 UNIX-LISTEN:${vsockPath}_8888,fork UNIX-SENDTO:$NOTIFY_SOCKET &
     fi
   '' + lib.optionalString graphics.enable ''
     rm -f ${graphics.socket}
