@@ -631,6 +631,23 @@ in
           Path of vhost-user socket
         '';
       };
+
+      vulkan = mkOption {
+        type = with types; nullOr (enum [ "venus" "drm_native_context" ]);
+        default = null;
+        description = ''
+          QEMU Vulkan translation protocol to use for enabling virtio-gpu Vulkan support.
+        '';
+      };
+
+      hostmem = mkOption {
+        type = types.str;
+        default = "256M";
+        description = ''
+          Size of the QEMU virtio-gpu host memory window, typically between 256M and 8G.
+          The value must include a unit suffix (M or G).
+        '';
+      };
     };
 
     vmHostPackages = mkOption {
