@@ -27,6 +27,11 @@
       "overlay"
     ];
 
+    boot.initrd.availableKernelModules = [
+      # Fix SSH over vsock when no virtio-PCI devices are available
+      "vmw_vsock_virtio_transport"
+    ];
+
     microvm.kernelParams = let
       # When a store disk is used, we can drop references to the packed contents as the squashfs/erofs contains all paths.
       toplevel = if config.microvm.storeOnDisk then
