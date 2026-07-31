@@ -262,7 +262,7 @@ lib.warnIf (mem == 2048) ''
     lib.optionals (user != null) [ "-run-with" "user=${user}" ] ++
     lib.optionals (socket != null) [ "-qmp" "unix:${socket},server,nowait" ] ++
     lib.optionals balloon [
-	    "-device" ("virtio-balloon,free-page-reporting=on,id=balloon0" + lib.optionalString (deflateOnOOM) ",deflate-on-oom=on")
+	    "-device" ("virtio-balloon-${devType},free-page-reporting=on,id=balloon0" + lib.optionalString (deflateOnOOM) ",deflate-on-oom=on")
     ] ++
     lib.optionals useHotPlugMemory [
       "-object" "memory-backend-ram,id=vmem0,size=${toString hotplugMem}M"
