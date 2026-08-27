@@ -16,8 +16,14 @@ let
 
   crosvmPkg = microvmConfig.crosvm.package;
 
+  # Avoid pulling ${kernel.dev} and its dependencies into resulting closure
+  vmlinux = pkgs.runCommand "vmlinux" {} ''
+    mkdir -p $out
+    cp ${kernel.dev}/vmlinux $out/vmlinux
+  '';
+
   kernelPath = {
-    x86_64-linux = "${kernel.dev}/vmlinux";
+    x86_64-linux = "${vmlinux}/vmlinux";
     aarch64-linux = "${kernel.out}/${linuxTarget}";
   }.${system};
 
