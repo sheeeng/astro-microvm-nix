@@ -63,7 +63,12 @@ in
                   mode = ":0775";
                 };
               }
-            ) { } guestConfig.microvm.shares
+            ) {
+              "${stateDir}/${name}".d = {
+                inherit user group;
+                mode = "0775";
+              };
+            } guestConfig.microvm.shares
           )
         )
         {
@@ -125,11 +130,8 @@ in
         unitConfig.ConditionPathExists = lib.mkIf (isFlake && updateFlake != null) "!${stateDir}/${name}";
         serviceConfig.Type = "oneshot";
         script = ''
-            mkdir -p ${stateDir}/${name}
-            cd ${stateDir}/${name}
-
             ln -sTf ${runner} current
-            chown -h ${user}:${group} . current
+            chown -h ${user}:${group} current
           ''
           # Including the toplevel here is crucial to have the service definition
           # change when the host is rebuilt and the vm definition changed.
@@ -143,7 +145,10 @@ in
                     else flake}' > flake
             chown -h ${user}:${group} flake
           '';
-        serviceConfig.SyslogIdentifier = "install-microvm-${name}";
+        serviceConfig = {
+          SyslogIdentifier = "install-microvm-${name}";
+          WorkingDirectory = "${stateDir}/${name}";
+        };
       };
       "microvm@${name}" = {
         # restartIfChanged is opt-out, so we have to include the definition unconditionally
