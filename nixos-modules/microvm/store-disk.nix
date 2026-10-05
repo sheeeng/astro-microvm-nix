@@ -31,6 +31,27 @@ let
       erofs = "mkfs.erofs ${erofsFlags} -T 0 --all-root -L nix-store --mount-point=/nix/store $out store";
     }.${config.microvm.storeDiskType};
 
+  checkProbeCommand = lib.optionalString (config.microvm.storeDiskType == "erofs") /* bash */ ''
+    echo Checking that the store disk is identified as erofs with LABEL=nix-store
+    probe=$(blkid -p -o udev "$out")
+    if ! grep -qx 'ID_FS_TYPE=erofs' <<<"$probe" ||
+       ! grep -qx 'ID_FS_LABEL=nix-store' <<<"$probe"; then
+      cat >&2 <<EOF
+ERROR: blkid does not identify the store disk as erofs with LABEL=nix-store.
+
+The guest mounts this disk through /dev/disk/by-label/nix-store,
+so a failed probe leaves the VM without a nix store and drops it into the emergency shell,
+where no TTY is attached.
+
+This can be fixed by changing the configuration, eg: adding a new package
+
+blkid reported:
+EOF
+      printf '%s\n' "''${probe:-<no output>}" | sed 's/^/  /' >&2
+      exit 1
+    fi
+  '';
+
   writeClosure = pkgs.writeClosure or pkgs.writeReferencesToFile;
 
   storeDiskContents = writeClosure (
@@ -65,11 +86,12 @@ in
       ];
 
       microvm.storeDisk = pkgs.buildPackages.runCommandLocal "microvm-store-disk.${config.microvm.storeDiskType}" {
-        nativeBuildInputs = [
-          pkgs.buildPackages.time
-          pkgs.buildPackages.bubblewrap
+        nativeBuildInputs = with pkgs.buildPackages; [
+          time
+          bubblewrap
+          util-linux
           {
-            squashfs = pkgs.buildPackages.squashfs-tools-ng;
+            squashfs = squashfs-tools-ng;
             erofs = erofs-utils;
           }.${config.microvm.storeDiskType}
         ];
@@ -92,6 +114,8 @@ in
             cp -a $(sort -u ${storeDiskContents}) store/
             time ${mkfsCommand}
           )
+
+        ${checkProbeCommand}
       '';
     })
 
