@@ -17,9 +17,10 @@ let
   crosvmPkg = microvmConfig.crosvm.package;
 
   # Avoid pulling ${kernel.dev} and its dependencies into resulting closure
-  vmlinux = pkgs.runCommand "vmlinux" {} ''
+  # crosvm loads only the PT_LOAD segments, so the DWARF sections are dead weight.
+  vmlinux = pkgs.runCommand "vmlinux" { nativeBuildInputs = [ pkgs.binutils ]; } ''
     mkdir -p $out
-    cp ${kernel.dev}/vmlinux $out/vmlinux
+    ${pkgs.stdenv.cc.targetPrefix}strip --strip-debug -o $out/vmlinux ${kernel.dev}/vmlinux
   '';
 
   kernelPath = {
